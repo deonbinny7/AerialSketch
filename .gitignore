@@ -1,0 +1,35 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pycache
+
+# Saved drawings
+saved/
+
+# Logs
+logs/
+*.log
+
+# Temp / diagnostic files
+diag.py
+diag_out.txt
+diag_out_utf8.txt
+
+# Trained model
+recognition/shape_cnn.keras
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# src/ (old folder from earlier attempt)
+src/
