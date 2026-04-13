@@ -1,0 +1,21 @@
+# AerialSketch — Exact working dependencies
+# Install via: pip install -r requirements.txt
+# OR simply run: run.bat (auto-manages the venv)
+#
+# IMPORTANT: Use a virtual environment to avoid protobuf conflicts:
+#   python -m venv venv
+#   venv\Scripts\activate
+#   pip install -r requirements.txt
+
+mediapipe==0.10.11
+opencv-contrib-python==4.13.0.92
+numpy==1.26.4
+pyttsx3==2.90
+protobuf==3.20.3
+sounddevice==0.5.5
+matplotlib==3.10.8
+absl-py==2.4.0
+attrs==26.1.0
+
+# Optional — for ML/CNN backend (set RECOG_BACKEND="ml" in config.py)
+# tensorflow==2.16.1
