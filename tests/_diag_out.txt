@@ -1,0 +1,11 @@
+﻿circle: shape=circle conf=0.616 accepted=True reason=''
+  => PASS (expected=circle)
+square: shape=square conf=0.585 accepted=True reason=''
+  => PASS (expected=square)
+triangle: shape=triangle conf=0.568 accepted=True reason=''
+  => PASS (expected=triangle)
+line: shape=line conf=0.454 accepted=False reason='partial_shape'
+  => FAIL (expected=line)
+     all_scores={'circle': 0.0, 'square': 0.0, 'triangle': 0.0, 'line': 0.4537}
+broken_circle: shape=circle conf=0.000 accepted=False reason='partial_shape'
+  => PASS (broken circle partial penalty check)

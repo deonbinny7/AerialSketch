@@ -176,11 +176,8 @@ class HandTracker:
         if len(self._gesture_buf) < GESTURE_DEBOUNCE_FRAMES:
             return Gesture.IDLE
 
-        # All frames agree?
+        # All frames in the buffer must agree — otherwise treat as IDLE
+        # (avoids "most-common" bleeding a stale DRAWING into the next stroke)
         if all(g == raw for g in self._gesture_buf):
             return raw
-        # Return the most common gesture in the buffer as a fallback
-        counts = {}
-        for g in self._gesture_buf:
-            counts[g] = counts.get(g, 0) + 1
-        return max(counts, key=counts.get)
+        return Gesture.IDLE

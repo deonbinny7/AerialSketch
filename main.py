@@ -27,6 +27,7 @@ Q  — quit
 import os
 import sys
 import datetime
+import time
 
 import cv2
 
@@ -34,7 +35,7 @@ from config import (
     CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS,
     FLIP_FRAME, WINDOW_TITLE, DEBUG_MODE, SAVE_OUTPUT_DIR,
     SHAPE_BEAUTIFY, AUTO_CLEAR_AFTER_DETECT, RECOGNIZED_SHAPE_COLOR,
-    BEAUTIFY_THICKNESS, PALETTE,
+    BEAUTIFY_THICKNESS, PALETTE, DETECTION_TRIGGER_DELAY,
 )
 from hand_tracking.tracker import HandTracker, Gesture
 from drawing.canvas        import DrawingCanvas
@@ -68,9 +69,16 @@ class AerialSketchApp:
         self.fps_ctr    = FPSCounter()
 
         # Runtime state
-        self._prev_gesture = Gesture.IDLE
-        self._debug        = DEBUG_MODE
-        self._running      = True
+        self._prev_gesture  = Gesture.IDLE
+        self._debug         = DEBUG_MODE
+        self._running       = True
+
+        # Draw-stop detection (Fix 1 + Fix 10)
+        self._pending_stroke = None   # stroke waiting to be classified
+        self._pending_since  = 0.0   # timestamp when drawing stopped
+        self._draw_start     = 0.0   # timestamp when drawing started
+        self._STOP_DELAY     = DETECTION_TRIGGER_DELAY
+        self._MIN_DRAW_TIME  = 0.4   # ignore strokes shorter than this (seconds)
 
         # Camera
         self._cap = self._open_camera()
@@ -140,36 +148,53 @@ class AerialSketchApp:
 
     def _update_drawing(self, gesture: Gesture, fingertip) -> None:
         prev = self._prev_gesture
+        now  = time.time()
 
         # ── Enter DRAWING ──────────────────────────────────────────────────
         if gesture == Gesture.DRAWING:
             if prev != Gesture.DRAWING:
                 self.canvas.begin_stroke()
+                self._draw_start     = now        # record start time
+                self._pending_stroke = None       # cancel any pending old stroke
             if fingertip:
                 self.canvas.add_point(fingertip)
 
-        # ── Leave DRAWING (stroke finished) ───────────────────────────────
+        # ── Leave DRAWING → queue stroke for delayed classification ────────
         elif prev == Gesture.DRAWING:
+            draw_duration = now - self._draw_start
             stroke = self.canvas.end_stroke()
-            if stroke and stroke.is_valid():
-                pts = stroke.decimated()
-                result = self.predictor.predict(pts)
-                if result and result.accepted:
-                    self._on_shape_detected(stroke, result)
+            if stroke and stroke.is_valid() and draw_duration >= self._MIN_DRAW_TIME:
+                self._pending_stroke = stroke
+                self._pending_since  = now        # start the stop-delay timer
+            # else: too short / accidental — discard silently
 
         # ── CLEAR canvas ───────────────────────────────────────────────────
         elif gesture == Gesture.CLEAR and prev != Gesture.CLEAR:
+            self._pending_stroke = None
             self.canvas.clear()
             self.ui.show_toast("Canvas cleared", color=(255, 80, 80))
 
+        # ── CLASSIFY pending stroke after stop delay ────────────────────────
+        if (self._pending_stroke is not None
+                and gesture != Gesture.DRAWING
+                and (now - self._pending_since) >= self._STOP_DELAY):
+            stroke = self._pending_stroke
+            self._pending_stroke = None
+            pts    = stroke.decimated()
+            result = self.predictor.predict(pts)
+            if result and result.accepted:
+                self._on_shape_detected(stroke, result)
+
         self._prev_gesture = gesture
+
 
     def _on_shape_detected(self, stroke, result) -> None:
         shape      = result.shape
         confidence = result.confidence
 
-        # Beautify stroke
+        # Beautify stroke — first wipe the raw freehand lines, then draw clean vector
         if SHAPE_BEAUTIFY:
+            self.canvas.clear_strokes_only()   # remove raw residue, keep canvas bg
             self.canvas.draw_beautified_shape(
                 shape,
                 stroke.points,

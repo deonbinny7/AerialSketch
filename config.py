@@ -1,5 +1,5 @@
 # =============================================================================
-#  AerialSketch — Centralized Configuration
+#  AerialSketch — Centralized Configuration  v2.0 (Production Upgrade)
 #  All constants live here. Import from this file ONLY. No hardcoding elsewhere.
 # =============================================================================
 
@@ -40,17 +40,50 @@ BRUSH_SIZES: list = [3, 5, 8, 12]   # px — cycle with gesture
 DEFAULT_BRUSH_IDX: int = 1
 
 ERASER_SIZE: int = 30               # px — eraser radius
-CANVAS_BG_COLOR: tuple = (10, 10, 18)  # Dark background (BGR)
+CANVAS_BG_COLOR: tuple = (0, 0, 0)  # Pure black — must be below overlay mask threshold (> 10)
+
+# ── Drawing Quality (Upgrade #4) ───────────────────────────────────────────────
+STROKE_GAP_FILL_PX: int = 12        # Max gap (px) the point interpolator will bridge.
+                                     # Prevents hollow circles from fast hand movement.
 
 # ── Recognition ────────────────────────────────────────────────────────────────
-RECOG_IMAGE_SIZE: int = 64          # Normalize strokes to this square (px)
-RECOG_CONFIDENCE_THRESHOLD: float = 0.78  # Min confidence to announce shape
-RECOG_BACKEND: str = "rule_based"   # "rule_based" | "ml"
+RECOG_IMAGE_SIZE: int = 64           # Normalize strokes to this square (px)
+RECOG_CONFIDENCE_THRESHOLD: float = 0.55  # Min confidence to announce shape (raised from 0.52 to reduce false positives)
+RECOG_BACKEND: str = "rule_based"   # "rule_based" | "ml" (set to 'ml' if TF is correctly set up)
 SHAPE_CLASSES: list = ["circle", "square", "triangle", "line"]
-SHAPE_BEAUTIFY: bool = True         # Replace sketch with clean vector on detection
+SHAPE_BEAUTIFY: bool = True          # Replace sketch with clean vector on detection
 AUTO_CLEAR_AFTER_DETECT: bool = False  # Clear canvas after shape announced
 RECOGNIZED_SHAPE_COLOR: tuple = (0, 255, 140)   # BGR color for beautified shape overlay
 BEAUTIFY_THICKNESS: int = 3                      # Stroke thickness of the beautified shape
+
+# ── Hybrid Fusion & Scoring (Upgrade #5 & #6) ──────────────────────────────────
+FUSION_WEIGHT_RULES: float = 0.6    # Rule-based contribution to hybrid score
+FUSION_WEIGHT_ML: float = 0.4       # ML contribution to hybrid score
+
+# Confidence Engine constants
+HYBRID_CONFIDENCE_FLOOR: float = 0.35  # After fusion, scores below this are treated as uncertain
+AMBIGUITY_MARGIN: float = 0.15         # If top-2 scores are within this margin, apply penalty
+PARTIAL_SHAPE_PENALTY: float = 0.40    # Multiplicative penalty for open/broken/partial shapes
+
+# ── Detection Timing (Upgrade #7) ─────────────────────────────────────────────
+# Tuned up from 0.6s → 0.7s: gives more deliberate strokes time to complete
+# before triggering classification, reducing premature classification.
+DETECTION_TRIGGER_DELAY: float = 0.7   # Seconds of inactivity before triggering detection
+
+# ── Preprocessing (Upgrade #3) ────────────────────────────────────────────────
+CONTOUR_MIN_AREA: int = 1200           # Noise floor — contours smaller than this are ignored (was 800)
+CLOSE_GAP_RATIO: float = 0.25         # Auto-close stroke if gap < this fraction of bbox diagonal
+
+# Ideal metric target values for the improved heuristic engine (Upgrade #1)
+# NOTE: circle circularity target reduced from 0.88 → 0.82 because hand-drawn
+#       circles rarely achieve near-perfect roundness. This avoids penalizing
+#       good circles too harshly.
+IDEAL_METRICS: dict = {
+    "circle":   {"circularity": 0.82, "solidity": 0.93, "vertices": 8},
+    "square":   {"circularity": 0.73, "solidity": 0.92, "vertices": 4},
+    "triangle": {"circularity": 0.58, "solidity": 0.88, "vertices": 3},
+    "line":     {"straightness": 0.90, "vertices": 2},
+}
 
 # ── Audio ──────────────────────────────────────────────────────────────────────
 AUDIO_ENABLED: bool = True

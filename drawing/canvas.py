@@ -19,7 +19,7 @@ from config import (
     CANVAS_BG_COLOR, PALETTE, BRUSH_SIZES,
     DEFAULT_COLOR_IDX, DEFAULT_BRUSH_IDX,
     SMOOTHING_WINDOW, MIN_STROKE_POINTS, MAX_STROKE_POINTS,
-    UNDO_HISTORY_LIMIT,
+    UNDO_HISTORY_LIMIT, STROKE_GAP_FILL_PX,
 )
 
 
@@ -132,6 +132,22 @@ class DrawingCanvas:
     def completed_strokes(self) -> List[Stroke]:
         return self._completed_strokes
 
+    @property
+    def stroke_length_px(self) -> float:
+        """
+        Total pixel length of the active stroke.
+        Used for adaptive detection timing — longer strokes benefit from
+        a slightly longer stop-delay before classification.
+        Returns 0.0 if not currently drawing.
+        """
+        if self._active_stroke is None or len(self._active_stroke.points) < 2:
+            return 0.0
+        pts = self._active_stroke.points
+        return float(sum(
+            np.linalg.norm(np.array(pts[i]) - np.array(pts[i-1]))
+            for i in range(1, len(pts))
+        ))
+
     # ── Drawing API ─────────────────────────────────────────────────────────
 
     def begin_stroke(self) -> None:
@@ -144,7 +160,16 @@ class DrawingCanvas:
         self._snapshot()   # Save state before new stroke (for undo)
 
     def add_point(self, raw_pt: Tuple[int,int]) -> None:
-        """Add a smoothed point to the current stroke."""
+        """
+        Add a smoothed point to the current stroke.
+
+        Upgrade v2.0: Gap-fill interpolation
+        ------------------------------------
+        When the user's hand moves fast (> STROKE_GAP_FILL_PX pixels between
+        frames), linearly interpolate intermediate points so that:
+          a) The stroke array has no large jumps (prevents broken contours)
+          b) The rendered canvas line has no visible gaps (prevents hollow circles)
+        """
         if not self._is_drawing or self._active_stroke is None:
             return
 
@@ -153,18 +178,33 @@ class DrawingCanvas:
             return
 
         pt = self._smoother.smooth(raw_pt)
-        self._active_stroke.add_point(pt)
+        col = (0, 0, 0) if self._eraser_mode else self.color
+        sz  = 30        if self._eraser_mode else self.brush_size
 
-        # Draw interpolated segment on canvas
         if self._last_pt is not None:
-            col = (0, 0, 0) if self._eraser_mode else self.color
-            sz  = 30        if self._eraser_mode else self.brush_size
+            # ── Gap-fill: interpolate if jump is too large ─────────────────
+            px0 = np.array(self._last_pt, dtype=float)
+            px1 = np.array(pt,            dtype=float)
+            gap = float(np.linalg.norm(px1 - px0))
+
+            if gap > STROKE_GAP_FILL_PX:
+                n_steps = int(np.ceil(gap / STROKE_GAP_FILL_PX))
+                for step in range(1, n_steps):
+                    t  = step / n_steps
+                    ip = (int(round(px0[0] + t * (px1[0] - px0[0]))),
+                          int(round(px0[1] + t * (px1[1] - px0[1]))))
+                    self._active_stroke.add_point(ip)
+                    # Also render the filled segment visually
+                    prev_ip = (int(round(px0[0] + (step-1)/n_steps * (px1[0]-px0[0]))),
+                               int(round(px0[1] + (step-1)/n_steps * (px1[1]-px0[1]))))
+                    cv2.line(self._canvas, prev_ip, ip, col, sz, cv2.LINE_AA)
+
+            # Draw final segment to current point
             cv2.line(self._canvas, self._last_pt, pt, col, sz, cv2.LINE_AA)
         else:
-            col = (0, 0, 0) if self._eraser_mode else self.color
-            sz  = 30        if self._eraser_mode else self.brush_size
             cv2.circle(self._canvas, pt, sz // 2, col, -1, cv2.LINE_AA)
 
+        self._active_stroke.add_point(pt)
         self._last_pt = pt
 
     def end_stroke(self) -> Optional[Stroke]:
@@ -186,6 +226,13 @@ class DrawingCanvas:
         return None
 
     # ── Canvas operations ───────────────────────────────────────────────────
+
+    def clear_strokes_only(self) -> None:
+        """Wipe canvas back to blank background WITHOUT pushing an undo snapshot.
+        Used internally to erase raw freehand residue before beautify rendering."""
+        self._canvas = self._blank_canvas()
+        self._completed_strokes.clear()
+        self._last_pt = None
 
     def clear(self) -> None:
         """Clear the canvas (also resets stroke history)."""
@@ -229,10 +276,11 @@ class DrawingCanvas:
         """
         out = frame.copy()
         mask = cv2.cvtColor(self._canvas, cv2.COLOR_BGR2GRAY) > 10
-        out[mask] = cv2.addWeighted(
-            out[mask], 0.15,
-            self._canvas[mask], 0.85, 0
-        )
+        if mask.any():                          # skip blend when canvas is blank
+            out[mask] = cv2.addWeighted(
+                out[mask], 0.15,
+                self._canvas[mask], 0.85, 0
+            )
         return out
 
     # ── Color / Brush ────────────────────────────────────────────────────────

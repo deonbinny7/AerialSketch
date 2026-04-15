@@ -18,4 +18,4 @@ absl-py==2.4.0
 attrs==26.1.0
 
 # Optional — for ML/CNN backend (set RECOG_BACKEND="ml" in config.py)
-# tensorflow==2.16.1
+tensorflow==2.16.1
